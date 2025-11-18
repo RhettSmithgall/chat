@@ -1,0 +1,16 @@
+# C source files: ISO8859-1 locally, UTF-8 in repo
+*.c working-tree-encoding=iso8859-1 git-encoding=utf-8
+*.h working-tree-encoding=iso8859-1 git-encoding=utf-8
+
+# SIC assembly/source files: IBM-1047 locally, UTF-8 in repo
+*.sic working-tree-encoding=iso8859-1 git-encoding=utf-8
+
+# Makefile: ISO8859-1 locally, UTF-8 in repo
+Makefile working-tree-encoding=iso8859-1 git-encoding=utf-8
+
+# Git attributes and ignore files: ISO8859-1 locally, UTF-8 in repo
+.gitattributes working-tree-encoding=iso8859-1 git-encoding=utf-8
+.gitignore working-tree-encoding=iso8859-1 git-encoding=utf-8
+
+# Everything else: auto-detect text files
+* text=auto eol=lf
