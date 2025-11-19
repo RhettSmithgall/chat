@@ -67,10 +67,15 @@ int main( int argc, char *argv[]){
         int talkPort = atoi(strtok(buffer," "));
         int listenPort = atoi(strtok(NULL," "));
 
-        struct mystructure talkAddr;
-
+        struct netStruct talkAddr;
+        pthread_t talkID;
         talkAddr.port = talkPort;
-        pthread_create(&thread_id[1],NULL,sendReceive,(void *)&talkAddr);
+        pthread_create(&talkID,NULL,sendReceive,(void *)&talkAddr);
+
+        struct netStruct listenAddr;
+        pthread_t listenID;
+        listenAddr.port = listenPort;
+        pthread_create(&listenID,NULL,sendReceive,(void *)&talkAddr);
         
     }
     if (numbytes == -1) {
@@ -110,14 +115,8 @@ void* listenThread(void *input){
     char buffer[128];
     int userInput[10];
 
-    //send input to server
-    if (send(sockfd,1,sizeof(userInput), 0) == -1){
-        perror("send");
-        exit(1);
-    }
-
     while(numbytes = recv(sockfd,buffer,sizeof(buffer),0) > 0){ //recieve and print output from server
-        printf("recieving: %s",buffer); 
+        printf("Them: %s",buffer); 
     }
     if (numbytes == -1) {
         perror("recv"); 
@@ -156,74 +155,22 @@ void *talkThread(void *input){
 
     int numbytes = 0;
     char buffer[128];
-    int userInput[10];
+    int userInput[32];
 
     //send input to server
-    if (send(sockfd,1,sizeof(userInput), 0) == -1){
-        perror("send");
-        exit(1);
+    while(scanf("%s",&userInput) == 1){
+        if (strcmp(word, "quit") == 0) { // Check for exit condition
+            break;
+        }
+
+        if (send(sockfd,1,sizeof(userInput), 0) == -1){
+            perror("send");
+            exit(1);
+        }
+
+        printf("You: %s",userInput);
     }
-
-    while(numbytes = recv(sockfd,buffer,sizeof(buffer),0) > 0){ //recieve and print output from server
-        printf("recieving: %s",buffer); 
-    }
-    if (numbytes == -1) {
-        perror("recv"); 
-    }
-    else if (numbytes == 0) {//close socket when connection has been terminated
-        close(sockfd); 
-    }
-
-    pthread_cancel(pthread_self());
-}
-
-
-
-//sendreceive is the thread function the threadmanager runs
-void *sendReceive(void *input){
-    int sockfd;
-
-    //derefrencing our void pointer structure with all the port and ip address information
-    struct myStructure *theirAddr = (struct myStructure*)input;
-    struct sockaddr_in dest_addr;
-
-    //create socket
-    if((sockfd = socket(PF_INET,SOCK_STREAM, 0)) < 0){
-        perror("Error creating socket");
-        exit(1);
-    }
-
-    //populate socket with addresses
-    dest_addr.sin_family = AF_INET;                     // host byte order
-    dest_addr.sin_port = htons(theirAddr->port);        // short, network byte order
-    dest_addr.sin_addr.s_addr = inet_addr(theirAddr->theirAddr); //ip address
-    memset(&(dest_addr.sin_zero), '\0', 8);             // zero the rest of the struct
-
-    //connect and wait for accept() on the server side
-    if(connect(sockfd, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr)) < 0){
-        perror("Connection error");
-    }
-
-    int numbytes = 0;
-    char buffer[128];
-    int userInput[10];
-
-    //send input to server
-    if (send(sockfd,1,sizeof(userInput), 0) == -1){
-        perror("send");
-        exit(1);
-    }
-
-    while(numbytes = recv(sockfd,buffer,sizeof(buffer),0) > 0){ //recieve and print output from server
-        printf("recieving: %s",buffer); 
-    }
-    if (numbytes == -1) {
-        perror("recv"); 
-    }
-    else if (numbytes == 0) {//close socket when connection has been terminated
-        close(sockfd); 
-    }
-
+    close(sockfd);
     pthread_cancel(pthread_self());
 }
 
