@@ -100,3 +100,122 @@ int main(int argc, char *argv[]) {
 
     return 0;
 }
+
+void *talkThread(void *input){
+    int sockfd;
+
+    //derefrencing our void pointer structure with all the port and ip address information
+    struct myStructure *theirAddr = (struct myStructure*)input;
+    struct sockaddr_in dest_addr;
+
+    //create socket
+    if((sockfd = socket(PF_INET,SOCK_STREAM, 0)) < 0){
+        perror("Error creating socket");
+        exit(1);
+    }
+
+    //populate socket with addresses
+    dest_addr.sin_family = AF_INET;                     // host byte order
+    dest_addr.sin_port = htons(theirAddr->port);        // short, network byte order
+    dest_addr.sin_addr.s_addr = inet_addr(theirAddr->theirAddr); //ip address
+    memset(&(dest_addr.sin_zero), '\0', 8);             // zero the rest of the struct
+
+    //connect and wait for accept() on the server side
+    if(connect(sockfd, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr)) < 0){
+        perror("Connection error");
+    }
+
+    int numbytes = 0;
+    char buffer[128];
+    int userInput[10];
+
+    //get user input from the struct
+    userInput[0] = theirAddr->input;
+
+    //send input to server
+    if (send(sockfd,userInput,sizeof(userInput), 0) == -1){
+        perror("send");
+        exit(1);
+    }
+
+    while(numbytes = recv(sockfd,buffer,sizeof(buffer),0) > 0){ //recieve and print output from server
+        printf("recieving: %s",buffer); 
+    }
+    if (numbytes == -1) {
+        perror("recv"); 
+    }
+    else if (numbytes == 0) {//close socket when connection has been terminated
+        close(sockfd); 
+    }
+
+    //c gets a little difficult to read here, the following code is derefrencing a struct pointer back into
+    //the value of the integer in order to deincriment by one
+    //pthread functions can't return a value so this direct manipulation of the address we need is required
+    *(theirAddr->numberOfThreads) = (*(theirAddr->numberOfThreads) - 1);
+
+    //here at the end the thread is making a note back in thread manager of the time it finished
+    theirAddr->end = clock();
+
+    //and finally it cancels itself to free up a new thread to be used
+    pthread_cancel(pthread_self());
+}
+
+void *listenThread(void *input){
+    int sockfd;
+
+    //derefrencing our void pointer structure with all the port and ip address information
+    struct myStructure *theirAddr = (struct myStructure*)input;
+    struct sockaddr_in dest_addr;
+
+    //create socket
+    if((sockfd = socket(PF_INET,SOCK_STREAM, 0)) < 0){
+        perror("Error creating socket");
+        exit(1);
+    }
+
+    //populate socket with addresses
+    dest_addr.sin_family = AF_INET;                     // host byte order
+    dest_addr.sin_port = htons(theirAddr->port);        // short, network byte order
+    dest_addr.sin_addr.s_addr = inet_addr(theirAddr->theirAddr); //ip address
+    memset(&(dest_addr.sin_zero), '\0', 8);             // zero the rest of the struct
+
+    //connect and wait for accept() on the server side
+    if(connect(sockfd, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr)) < 0){
+        perror("Connection error");
+    }
+
+    int numbytes = 0;
+    char buffer[128];
+    int userInput[10];
+
+    //get user input from the struct
+    userInput[0] = theirAddr->input;
+
+    //send input to server
+    if (send(sockfd,userInput,sizeof(userInput), 0) == -1){
+        perror("send");
+        exit(1);
+    }
+
+    while(numbytes = recv(sockfd,buffer,sizeof(buffer),0) > 0){ //recieve and print output from server
+        printf("recieving: %s",buffer); 
+    }
+    if (numbytes == -1) {
+        perror("recv"); 
+    }
+    else if (numbytes == 0) {//close socket when connection has been terminated
+        close(sockfd); 
+    }
+
+    //c gets a little difficult to read here, the following code is derefrencing a struct pointer back into
+    //the value of the integer in order to deincriment by one
+    //pthread functions can't return a value so this direct manipulation of the address we need is required
+    *(theirAddr->numberOfThreads) = (*(theirAddr->numberOfThreads) - 1);
+
+    //here at the end the thread is making a note back in thread manager of the time it finished
+    theirAddr->end = clock();
+
+    //and finally it cancels itself to free up a new thread to be used
+    pthread_cancel(pthread_self());
+}
+

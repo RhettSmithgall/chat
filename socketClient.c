@@ -89,9 +89,7 @@ int howManyThreads(){
 //because pthreads only accepts a void pointer to a function it's type and argument are both void pointers
 //this function creates a socket, sends the user input, recieves the output from the server, then prints the result(s)
 //until the socket is closed by the server
-void *sendReceive(void *input)
-
-{
+void *sendReceive(void *input){
     int sockfd;
 
     //derefrencing our void pointer structure with all the port and ip address information

@@ -26,7 +26,7 @@ int main( int argc, char *argv[]){
     //create socket
     int server_fd;
     if((server_fd = socket(PF_INET,SOCK_STREAM, 0)) < 0){
-        perror("Error creating socket");
+        perror("socket() error");
         exit(1);
     }
 
@@ -37,11 +37,14 @@ int main( int argc, char *argv[]){
     memset(&(server_addr.sin_zero), '\0', 8);                 // zero the rest of the struct
 
     if(connect(server_fd, (struct sockaddr *)&server_addr, sizeof(struct sockaddr)) < 0){
-        perror("Connection error");
+        perror("Connect() error");
     }
+
 
     
 }
+
+
 
 
 

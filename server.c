@@ -50,9 +50,12 @@ int main( int argc, char *argv[]){
     addr_size = sizeof(their_addr);
 
     while(1){
-        new_fd = accept(server_fd, (struct sockaddr *)&their_addr,&addr_size);
+        if(new_fd = accept(server_fd, (struct sockaddr *)&their_addr,&addr_size) < 0){
+            perror("Accept Error");
+            continue;
+        };
 
-
+        
     }
     
     
