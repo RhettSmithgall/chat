@@ -44,8 +44,6 @@ int main( int argc, char *argv[]){
         exit(1);
     }
 
-
-
     //assign it values
     my_addr.sin_family = AF_INET;       // host byte order
     my_addr.sin_port = htons(port);     // short, network byte order
