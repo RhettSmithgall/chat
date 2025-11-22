@@ -1,23 +1,7 @@
-#include <winsock.h>
-#include <ws2tcpip.h>
+#include "headers.h"
 
-//#include <arpa/inet.h>
-#include <stdio.h>
-#include <string.h>
-//#include <sys/socket.h>
-//#include <unistd.h>
-#include <stdlib.h>
-//#include <pthread.h>
-#include <time.h>
+//global struct to hold active users
 
-#define SERVER_HOSTNAME "zos.ospreys.biz"
-#define SERVER_PORT 50074
-
-//this struct holds all the arguments required for sendRecieve
-typedef struct{
-    int port;
-    char addr[30];
-}netStruct;
 
 int main( int argc, char *argv[]){
 
@@ -40,8 +24,55 @@ int main( int argc, char *argv[]){
         perror("Connect() error");
     }
 
+    User* activeUser = NULL;
 
-    
+    pthread_t tid;
+    pthread_create(&tid, NULL, recv_thread, &server_fd);
+
+    char msg[1024];
+    while (fgets(msg, sizeof(msg), stdin)) {
+
+        send(server_fd, msg, strlen(msg), 0);
+    }
+
+}
+
+void *recv_thread(void *arg) {
+    int sock = *(int*)arg;
+    char buffer[1024];
+
+    while (1) {
+        int n = recv(sock, buffer, sizeof(buffer)-1, 0);
+        if (n <= 0){break;}
+        buffer[n] = '\0';
+
+        msgHandler(buffer);
+    }
+    return NULL;
+}
+
+void msgHandler(const char *msg) {
+    char *token = strtok(msg, " ");
+    if(strcmp(token, "chat") == 0){ //if the packet is a chat message
+        printf("%s", token);
+
+    }
+    else if(strcmp(token, "user") == 0){ //if the packet is the list of users
+        printf("Online Users:\n");
+        token = strtok(NULL, " ");
+        while (token != NULL) {
+            printf("%s\n", token);
+            token = strtok(NULL, " ");
+        }
+    }
+    else if(strcmp(token, "1on1") == 0){ //tells us we are now 1 on 1 with another client
+        printf("Online Users:\n");
+        token = strtok(NULL, " ");
+        while (token != NULL) {
+            printf("%s\n", token);
+            token = strtok(NULL, " ");
+        }
+    }
 }
 
 
