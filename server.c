@@ -159,7 +159,7 @@ void add_new_client(int listener,struct pollfd **pfds,int *fd_count,int *fd_size
     int nbytes = recv(newfd, username, sizeof(username), 0);
     username[nbytes] = '\0';
 
-    printf("%s connected!\n");
+    printf("%s connected!\n", username);
 
     insertUser(&userlist,username,newfd,0,1);
 
