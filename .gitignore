@@ -1,2 +1,4 @@
 *.json
 *.exe
+client
+server
