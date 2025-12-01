@@ -9,8 +9,8 @@
 #include <netdb.h>
 #include <poll.h>
 
-#define SERVER_HOSTNAME "zos.ospreys.biz"
-#define SERVER_PORT "50074"
+#define SERVER_HOSTNAME "systems.ospreys.biz" //zos.ospreys.biz
+#define SERVER_PORT "1112" //50074
 #define BACKLOG 20
 
 //GLOBABL VARIABLES
@@ -128,6 +128,24 @@ struct user* insertUser(struct user** head, char* username, int fd, int partner,
     return newSymbol;
 }
 
+struct user* findUserByFd(int fd) {
+    struct user* temp = userlist;
+    while (temp != NULL) {
+        if (temp->fd == fd) return temp;
+        temp = temp->next;
+    }
+    return NULL;
+}
+
+void updateUserStatus(int fd, int partner, int status) {
+    struct user* user = findUserByFd(fd);
+    if (user) {
+        user->partner = partner;
+        user->status = status;
+        printf("Updated %s: status=%d, partner=%d\n", user->username, status, partner);
+    }
+}
+
 // Add a new file descriptor to the set
 void add_to_pfds(struct pollfd *pfds[], int newfd, int *fd_count, int *fd_size){
     // If we don't have room, add more space in the pfds array
@@ -178,6 +196,15 @@ void add_new_client(int listener,struct pollfd **pfds,int *fd_count,int *fd_size
     }
     printf("sending END\n");
     send(newfd,"{END}",5,0);
+
+    char newUserMsg[64];
+    snprintf(newUserMsg, sizeof(newUserMsg), "{%s,%d,%d,%d}", username, newfd, 0, 1);
+    for (int i = 0; i < *fd_count; i++) {
+        int destFd = (*pfds)[i].fd;
+        if (destFd != listener && destFd != newfd) {
+            send(destFd, newUserMsg, strlen(newUserMsg), 0);
+        }
+    }
 
     add_to_pfds(pfds, newfd, fd_count, fd_size);
 }
@@ -254,20 +281,20 @@ int main(int argc, char* argv[]){
                     }
 
                     if (temp) {
-                        // Broadcast updated user to everyone
+                        // Broadcast user disconnect to everyone (status -1 = offline)
                         char notify[128];
-                        //snprintf(notify, sizeof(notify),"{%s %d %d %d}",
-                            //temp->username,temp->fd,temp->partner,-1);
-                        snprintf(buf, sizeof(buf),"%s disconnected\n", temp->username);
+                        snprintf(notify, sizeof(notify), "{%s,%d,%d,%d}",
+                            temp->username, temp->fd, temp->partner, -1);
 
                         for (int j = 0; j < fd_count; j++) {
                             int dest_fd = pfds[j].fd;
 
                             if (dest_fd != listener && dest_fd != sender_fd) {
-                                //send(dest_fd, notify, strlen(notify), 0);
-                                send(dest_fd, buf, nbytes, 0);
+                                send(dest_fd, notify, strlen(notify), 0);
                             }
                         }
+                        
+                        // TODO: Remove user from userlist
                     }
 
                     // Remove from poll list
@@ -276,16 +303,45 @@ int main(int argc, char* argv[]){
                     i--;   // IMPORTANT: adjust index because pfds shifted
                 }
                 else {
-                    // -------------------------
-                    // NORMAL MESSAGE RECV
-                    // -------------------------
-                    // Broadcast buf to all others
-                    for (int j = 0; j < fd_count; j++) {
-                        int dest_fd = pfds[j].fd;
+                    buf[nbytes] = '\0';
+                    
+                    // Check for commands
+                    if (strncmp(buf, "/private ", 9) == 0) {
+                        // Client wants to enter private chat
+                        int partnerFd = atoi(buf + 9);
+                        updateUserStatus(sender_fd, partnerFd, 3);  // status 3 = private
+                        continue;
+                    }
+                    
+                    if (strncmp(buf, "/lobby", 6) == 0) {
+                        // Client wants to return to lobby
+                        updateUserStatus(sender_fd, 0, 1);  // status 1 = active in lobby
+                        continue;
+                    }
+                    
+                    // Find the sender's user info
+                    struct user *sender = findUserByFd(sender_fd);
+                    
+                    if (sender && sender->status == 3) {
+                        // PRIVATE CHAT: Only send to partner
+                        if (sender->partner > 0) {
+                            if (send(sender->partner, buf, nbytes, 0) == -1) {
+                                perror("send private");
+                            }
+                        }
+                    } else {
+                        // LOBBY CHAT: Send to all users in lobby (status 1)
+                        for (int j = 0; j < fd_count; j++) {
+                            int dest_fd = pfds[j].fd;
 
-                        if (dest_fd != listener && dest_fd != sender_fd) {
-                            if (send(dest_fd, buf, nbytes, 0) == -1) {
-                                perror("send");
+                            if (dest_fd != listener && dest_fd != sender_fd) {
+                                // Only send to users in lobby (status 1)
+                                struct user *dest = findUserByFd(dest_fd);
+                                if (dest && dest->status == 1) {
+                                    if (send(dest_fd, buf, nbytes, 0) == -1) {
+                                        perror("send lobby");
+                                    }
+                                }
                             }
                         }
                     }
