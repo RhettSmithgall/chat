@@ -18,8 +18,8 @@
 #define KCYN  "\x27[36m"
 #define KWHT  "\x27[37m"
 
-#define SERVER_HOSTNAME "zos.ospreys.biz"
-#define SERVER_PORT "50074"
+#define SERVER_HOSTNAME "localhost" //zos.ospreys.biz
+#define SERVER_PORT "1112" //50074
 
 //a struct to hold users
 struct user{

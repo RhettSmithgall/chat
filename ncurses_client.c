@@ -71,6 +71,10 @@ Panel privateInputPanel;
 char partnerName[24] = {0};
 int partnerFd = -1;  // Track partner's fd for server communication
 
+// Pending chat request tracking
+int pendingRequestFd = -1;  // fd of user who sent us a chat request
+char pendingRequestName[24] = {0};
+
 // Selection tracking for user lists
 int activeSelected = 0, onlineSelected = 0, privateSelected = 0;
 int activeScroll = 0, onlineScroll = 0, privateScroll = 0;
@@ -530,11 +534,6 @@ void switchToPrivateView(const char *partner, int pFd) {
     strncpy(partnerName, partner, sizeof(partnerName) - 1);
     partnerFd = pFd;
     
-    // Tell server we're entering private chat (status=3, partner=pFd)
-    char cmd[64];
-    snprintf(cmd, sizeof(cmd), "/private %d", pFd);
-    send(serverFd, cmd, strlen(cmd), 0);
-    
     destroyLobbyWindows();
     clear();
     refresh();
@@ -548,8 +547,9 @@ void switchToPrivateView(const char *partner, int pFd) {
     privateMsgCount = 0;
     
     char msg[64];
-    snprintf(msg, sizeof(msg), "*** Started private chat with %s ***", partner);
+    snprintf(msg, sizeof(msg), "*** Private chat with %s started ***", partner);
     addPrivateMessage(msg);
+    addPrivateMessage("*** Type /leave to return to lobby ***");
 }
 
 void switchToLobbyView() {
@@ -579,6 +579,45 @@ void handleLobbyEnter() {
         if (inputPos > 0) {
             inputBuffer[inputPos] = '\0';
             
+            // Check for /accept command
+            if (strcmp(inputBuffer, "/accept") == 0) {
+                if (pendingRequestFd > 0) {
+                    char cmd[64];
+                    snprintf(cmd, sizeof(cmd), "/accept %d", pendingRequestFd);
+                    send(serverFd, cmd, strlen(cmd), 0);
+                    
+                    // Switch to private view with the requester
+                    switchToPrivateView(pendingRequestName, pendingRequestFd);
+                    
+                    pendingRequestFd = -1;
+                    memset(pendingRequestName, 0, sizeof(pendingRequestName));
+                } else {
+                    addLobbyMessage("*** No pending chat request ***");
+                }
+                memset(inputBuffer, 0, sizeof(inputBuffer));
+                inputPos = 0;
+                return;
+            }
+            
+            // Check for /decline command
+            if (strcmp(inputBuffer, "/decline") == 0) {
+                if (pendingRequestFd > 0) {
+                    char cmd[64];
+                    snprintf(cmd, sizeof(cmd), "/decline %d", pendingRequestFd);
+                    send(serverFd, cmd, strlen(cmd), 0);
+                    
+                    addLobbyMessage("*** Chat request declined ***");
+                    
+                    pendingRequestFd = -1;
+                    memset(pendingRequestName, 0, sizeof(pendingRequestName));
+                } else {
+                    addLobbyMessage("*** No pending chat request ***");
+                }
+                memset(inputBuffer, 0, sizeof(inputBuffer));
+                inputPos = 0;
+                return;
+            }
+            
             char msg[MAX_INPUT + 32];
             snprintf(msg, sizeof(msg), "%s: %s", myUsername, inputBuffer);
             addLobbyMessage(msg);
@@ -592,19 +631,33 @@ void handleLobbyEnter() {
         // Request private chat with selected active user
         User *selected = getUserByStatusIndex(userlist, 1, activeSelected);
         if (selected && selected->fd != myFd) {
+            // Send request to server
+            char cmd[64];
+            snprintf(cmd, sizeof(cmd), "/request %d", selected->fd);
+            send(serverFd, cmd, strlen(cmd), 0);
+            
             char msg[64];
-            snprintf(msg, sizeof(msg), "*** Starting private chat with %s ***", selected->username);
+            snprintf(msg, sizeof(msg), "*** Chat request sent to %s (waiting for response) ***", selected->username);
             addLobbyMessage(msg);
-            switchToPrivateView(selected->username, selected->fd);
+            
+            // Store who we requested (for when they accept)
+            strncpy(partnerName, selected->username, sizeof(partnerName) - 1);
+            partnerFd = selected->fd;
         }
     } else if (activePanel == 1) {
         // Request private chat with selected online user
         User *selected = getUserByStatusIndex(userlist, 0, onlineSelected);
         if (selected && selected->fd != myFd) {
+            char cmd[64];
+            snprintf(cmd, sizeof(cmd), "/request %d", selected->fd);
+            send(serverFd, cmd, strlen(cmd), 0);
+            
             char msg[64];
-            snprintf(msg, sizeof(msg), "*** Starting private chat with %s ***", selected->username);
+            snprintf(msg, sizeof(msg), "*** Chat request sent to %s (waiting for response) ***", selected->username);
             addLobbyMessage(msg);
-            switchToPrivateView(selected->username, selected->fd);
+            
+            strncpy(partnerName, selected->username, sizeof(partnerName) - 1);
+            partnerFd = selected->fd;
         }
     }
 }
@@ -763,9 +816,9 @@ int main(int argc, char *argv[]) {
     curs_set(0);
     start_color();
     
-    init_pair(1, COLOR_CYAN, COLOR_BLACK);    // Active panel title
+    init_pair(1, COLOR_GREEN, COLOR_BLACK);    // Active panel title
     init_pair(2, COLOR_GREEN, COLOR_BLACK);   // Private chat users
-    init_pair(3, COLOR_YELLOW, COLOR_BLACK);  // Self highlight
+    init_pair(3, COLOR_CYAN, COLOR_BLACK);  // Self highlight
 
     getmaxyx(stdscr, maxY, maxX);
     
@@ -814,7 +867,69 @@ int main(int argc, char *argv[]) {
                 }
             }
             
-            // Add message if not empty
+            // Check for server notifications
+            if (strncmp(buffer, "/chatrequest ", 13) == 0) {
+                // Someone wants to chat with us
+                int requesterFd;
+                char requesterName[24];
+                if (sscanf(buffer, "/chatrequest %d %23s", &requesterFd, requesterName) == 2) {
+                    pendingRequestFd = requesterFd;
+                    strncpy(pendingRequestName, requesterName, sizeof(pendingRequestName) - 1);
+                    
+                    char msg[128];
+                    snprintf(msg, sizeof(msg), "*** %s wants to chat! Type /accept or /decline ***", requesterName);
+                    addLobbyMessage(msg);
+                }
+                if (currentView == VIEW_LOBBY) renderLobby();
+                continue;
+            }
+            
+            if (strncmp(buffer, "/accepted ", 10) == 0) {
+                // Our request was accepted!
+                int accepterFd;
+                char accepterName[24];
+                if (sscanf(buffer, "/accepted %d %23s", &accepterFd, accepterName) == 2) {
+                    char msg[64];
+                    snprintf(msg, sizeof(msg), "*** %s accepted your chat request! ***", accepterName);
+                    addLobbyMessage(msg);
+                    
+                    // Switch to private view
+                    switchToPrivateView(accepterName, accepterFd);
+                    renderPrivateChat();
+                }
+                continue;
+            }
+            
+            if (strncmp(buffer, "/declined ", 10) == 0) {
+                // Our request was declined
+                char declinerName[24];
+                if (sscanf(buffer, "/declined %23s", declinerName) == 1) {
+                    char msg[64];
+                    snprintf(msg, sizeof(msg), "*** %s declined your chat request ***", declinerName);
+                    addLobbyMessage(msg);
+                    
+                    // Clear pending partner info
+                    partnerFd = -1;
+                    memset(partnerName, 0, sizeof(partnerName));
+                }
+                if (currentView == VIEW_LOBBY) renderLobby();
+                continue;
+            }
+            
+            if (strncmp(buffer, "/partleft ", 10) == 0) {
+                // Partner left the private chat
+                char leaverName[24];
+                if (sscanf(buffer, "/partleft %23s", leaverName) == 1) {
+                    addPrivateMessage("*** Partner left the chat ***");
+                    renderPrivateChat();
+                    sleep(1);
+                    switchToLobbyView();
+                    renderLobby();
+                }
+                continue;
+            }
+            
+            // Add regular message if not empty
             char *newline = strchr(buffer, '\n');
             if (newline) *newline = '\0';
             

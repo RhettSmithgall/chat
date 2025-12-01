@@ -304,24 +304,83 @@ int main(int argc, char* argv[]){
                 }
                 else {
                     buf[nbytes] = '\0';
+                    struct user *sender = findUserByFd(sender_fd);
                     
                     // Check for commands
-                    if (strncmp(buf, "/private ", 9) == 0) {
-                        // Client wants to enter private chat
-                        int partnerFd = atoi(buf + 9);
-                        updateUserStatus(sender_fd, partnerFd, 3);  // status 3 = private
+                    if (strncmp(buf, "/request ", 9) == 0) {
+                        // Client wants to request private chat
+                        int targetFd = atoi(buf + 9);
+                        struct user *target = findUserByFd(targetFd);
+                        
+                        if (sender && target && target->status == 1) {
+                            // Set sender to pending (status=2), store who they requested
+                            updateUserStatus(sender_fd, targetFd, 2);
+                            
+                            // Notify target of the request
+                            char notify[128];
+                            snprintf(notify, sizeof(notify), "/chatrequest %d %s", sender_fd, sender->username);
+                            send(targetFd, notify, strlen(notify), 0);
+                            
+                            printf("%s requested private chat with %s\n", sender->username, target->username);
+                        }
+                        continue;
+                    }
+                    
+                    if (strncmp(buf, "/accept ", 8) == 0) {
+                        // Client accepts a chat request
+                        int requesterFd = atoi(buf + 8);
+                        struct user *requester = findUserByFd(requesterFd);
+                        
+                        if (sender && requester && requester->status == 2 && requester->partner == sender_fd) {
+                            // Both users enter private chat
+                            updateUserStatus(sender_fd, requesterFd, 3);
+                            updateUserStatus(requesterFd, sender_fd, 3);
+                            
+                            // Notify requester that request was accepted
+                            char notify[128];
+                            snprintf(notify, sizeof(notify), "/accepted %d %s", sender_fd, sender->username);
+                            send(requesterFd, notify, strlen(notify), 0);
+                            
+                            printf("%s accepted chat from %s\n", sender->username, requester->username);
+                        }
+                        continue;
+                    }
+                    
+                    if (strncmp(buf, "/decline ", 9) == 0) {
+                        // Client declines a chat request
+                        int requesterFd = atoi(buf + 9);
+                        struct user *requester = findUserByFd(requesterFd);
+                        
+                        if (requester && requester->status == 2 && requester->partner == sender_fd) {
+                            // Return requester to lobby
+                            updateUserStatus(requesterFd, 0, 1);
+                            
+                            // Notify requester that request was declined
+                            char notify[64];
+                            snprintf(notify, sizeof(notify), "/declined %s", sender->username);
+                            send(requesterFd, notify, strlen(notify), 0);
+                            
+                            printf("%s declined chat from %s\n", sender->username, requester->username);
+                        }
                         continue;
                     }
                     
                     if (strncmp(buf, "/lobby", 6) == 0) {
                         // Client wants to return to lobby
-                        updateUserStatus(sender_fd, 0, 1);  // status 1 = active in lobby
+                        if (sender && sender->status == 3 && sender->partner > 0) {
+                            // Notify partner that chat ended
+                            char notify[64];
+                            snprintf(notify, sizeof(notify), "/partleft %s", sender->username);
+                            send(sender->partner, notify, strlen(notify), 0);
+                            
+                            // Return partner to lobby too
+                            updateUserStatus(sender->partner, 0, 1);
+                        }
+                        updateUserStatus(sender_fd, 0, 1);
                         continue;
                     }
                     
-                    // Find the sender's user info
-                    struct user *sender = findUserByFd(sender_fd);
-                    
+                    // Handle regular messages based on status
                     if (sender && sender->status == 3) {
                         // PRIVATE CHAT: Only send to partner
                         if (sender->partner > 0) {
@@ -329,13 +388,12 @@ int main(int argc, char* argv[]){
                                 perror("send private");
                             }
                         }
-                    } else {
+                    } else if (sender && sender->status == 1) {
                         // LOBBY CHAT: Send to all users in lobby (status 1)
                         for (int j = 0; j < fd_count; j++) {
                             int dest_fd = pfds[j].fd;
 
                             if (dest_fd != listener && dest_fd != sender_fd) {
-                                // Only send to users in lobby (status 1)
                                 struct user *dest = findUserByFd(dest_fd);
                                 if (dest && dest->status == 1) {
                                     if (send(dest_fd, buf, nbytes, 0) == -1) {
@@ -345,6 +403,7 @@ int main(int argc, char* argv[]){
                             }
                         }
                     }
+                    // If status == 2 (pending), don't send messages anywhere
                 }
             }
         }
