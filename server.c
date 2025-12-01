@@ -146,12 +146,51 @@ void updateUserStatus(int fd, int partner, int status) {
     }
 }
 
+void removeUser(int fd) {
+    struct user* temp = userlist;
+    struct user* prev = NULL;
+    
+    if (temp == NULL) return;
+    
+    // If head needs to be removed
+    if (temp->fd == fd) {
+        userlist = temp->next;
+        printf("Removed user: %s\n", temp->username);
+        free(temp);
+        return;
+    }
+    
+    while (temp != NULL && temp->fd != fd) {
+        prev = temp;
+        temp = temp->next;
+    }
+    
+    if (temp == NULL) return;
+    
+    prev->next = temp->next;
+    printf("Removed user: %s\n", temp->username);
+    free(temp);
+}
+
+void broadcastUserUpdate(struct user* user, int listener, struct pollfd* pfds, int fd_count) {
+    if (!user) return;
+    
+    char notify[128];
+    snprintf(notify, sizeof(notify), "{%s,%d,%d,%d}", 
+             user->username, user->fd, user->partner, user->status);
+    
+    for (int j = 0; j < fd_count; j++) {
+        int dest_fd = pfds[j].fd;
+        if (dest_fd != listener && dest_fd != user->fd) {
+            send(dest_fd, notify, strlen(notify), 0);
+        }
+    }
+}
+
 // Add a new file descriptor to the set
 void add_to_pfds(struct pollfd *pfds[], int newfd, int *fd_count, int *fd_size){
-    // If we don't have room, add more space in the pfds array
     if (*fd_count == *fd_size) {
-        *fd_size *= 2; // Double it
-
+        *fd_size *= 2;
         *pfds = realloc(*pfds, sizeof(**pfds) * (*fd_size));
     }
 
@@ -165,7 +204,7 @@ void add_new_client(int listener,struct pollfd **pfds,int *fd_count,int *fd_size
     struct sockaddr_storage remoteaddr;
     socklen_t addrlen = sizeof remoteaddr;
 
-    char remoteIP[INET6_ADDRSTRLEN];
+    // char remoteIP[INET6_ADDRSTRLEN];
 
     int newfd = accept(listener, (struct sockaddr *)&remoteaddr, &addrlen);
     if (newfd == -1) {
@@ -211,7 +250,7 @@ void add_new_client(int listener,struct pollfd **pfds,int *fd_count,int *fd_size
 
 int main(int argc, char* argv[]){
     int listener;
-    struct sockaddr_in my_addr;
+    // struct sockaddr_in my_addr;
 
     //create a socket
     listener = get_listener_socket();
@@ -234,14 +273,14 @@ int main(int argc, char* argv[]){
     fd_count = 1; 
 
     //0 online, 1 active, 2 pending, 3 private
-    insertUser(&userlist, "s990333", 20, 0 , 0);
-    insertUser(&userlist, "s990355", 40, 0 , 0);
-    insertUser(&userlist, "s990367", 45, 0 , 0);
-    insertUser(&userlist, "s990101", 10, 15, 3);
-    insertUser(&userlist, "s990123", 15, 10, 3);
-    insertUser(&userlist, "s990444", 25, 0 , 1);
-    insertUser(&userlist, "s990555", 30, 0 , 1);
-    insertUser(&userlist, "s990666", 35, 0 , 1);
+    // insertUser(&userlist, "s990333", 20, 0 , 0);
+    // insertUser(&userlist, "s990355", 40, 0 , 0);
+    // insertUser(&userlist, "s990367", 45, 0 , 0);
+    // insertUser(&userlist, "s990101", 10, 15, 3);
+    // insertUser(&userlist, "s990123", 15, 10, 3);
+    // insertUser(&userlist, "s990444", 25, 0 , 1);
+    // insertUser(&userlist, "s990555", 30, 0 , 1);
+    // insertUser(&userlist, "s990666", 35, 0 , 1);
 
     char buf[255];
 
@@ -294,7 +333,8 @@ int main(int argc, char* argv[]){
                             }
                         }
                         
-                        // TODO: Remove user from userlist
+                        // Remove user from userlist
+                        removeUser(sender_fd);
                     }
 
                     // Remove from poll list
@@ -336,6 +376,10 @@ int main(int argc, char* argv[]){
                             updateUserStatus(sender_fd, requesterFd, 3);
                             updateUserStatus(requesterFd, sender_fd, 3);
                             
+                            // Broadcast status changes to all other users
+                            broadcastUserUpdate(sender, listener, pfds, fd_count);
+                            broadcastUserUpdate(requester, listener, pfds, fd_count);
+                            
                             // Notify requester that request was accepted
                             char notify[128];
                             snprintf(notify, sizeof(notify), "/accepted %d %s", sender_fd, sender->username);
@@ -368,6 +412,8 @@ int main(int argc, char* argv[]){
                     if (strncmp(buf, "/lobby", 6) == 0) {
                         // Client wants to return to lobby
                         if (sender && sender->status == 3 && sender->partner > 0) {
+                            struct user *partner = findUserByFd(sender->partner);
+                            
                             // Notify partner that chat ended
                             char notify[64];
                             snprintf(notify, sizeof(notify), "/partleft %s", sender->username);
@@ -375,8 +421,16 @@ int main(int argc, char* argv[]){
                             
                             // Return partner to lobby too
                             updateUserStatus(sender->partner, 0, 1);
+                            
+                            // Broadcast partner's return to lobby
+                            if (partner) {
+                                broadcastUserUpdate(partner, listener, pfds, fd_count);
+                            }
                         }
                         updateUserStatus(sender_fd, 0, 1);
+                        
+                        // Broadcast sender's return to lobby
+                        broadcastUserUpdate(sender, listener, pfds, fd_count);
                         continue;
                     }
                     
