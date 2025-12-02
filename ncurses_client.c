@@ -834,18 +834,21 @@ int main(int argc, char *argv[]) {
 
             buffer[nbytes] = '\0';
             
-            // Check for user update
-            if (buffer[0] == '{') {
+            while (buffer[0] == '{') {
                 changeUser(buffer);
                 char *end = strchr(buffer, '}');
                 if (end) {
-                    memmove(buffer, end + 1, strlen(end));
+                    memmove(buffer, end + 1, strlen(end + 1) + 1);
+                } else {
+                    buffer[0] = '\0';
+                    break;
                 }
-                if (strlen(buffer) == 0 || buffer[0] == '{') {
-                    if (currentView == VIEW_LOBBY) renderLobby();
-                    else renderPrivateChat();
-                    continue;
-                }
+            }
+            
+            if (strlen(buffer) == 0) {
+                if (currentView == VIEW_LOBBY) renderLobby();
+                else renderPrivateChat();
+                continue;
             }
             
             // Check for server notifications
