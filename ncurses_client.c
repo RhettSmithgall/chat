@@ -622,7 +622,7 @@ void handleLobbyEnter() {
             snprintf(msg, sizeof(msg), "%s: %s", myUsername, inputBuffer);
             addLobbyMessage(msg);
             
-            send(serverFd, inputBuffer, strlen(inputBuffer), 0);
+            send(serverFd, msg, strlen(msg), 0);
             
             memset(inputBuffer, 0, sizeof(inputBuffer));
             inputPos = 0;
