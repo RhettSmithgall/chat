@@ -411,25 +411,28 @@ int main(int argc, char* argv[]){
                     
                     if (strncmp(buf, "/lobby", 6) == 0) {
                         // Client wants to return to lobby
-                        if (sender && sender->status == 3 && sender->partner > 0) {
-                            struct user *partner = findUserByFd(sender->partner);
-                            
+                        int partnerFd = sender ? sender->partner : 0;
+                        
+                        if (sender && sender->status == 3 && partnerFd > 0) {
                             // Notify partner that chat ended
                             char notify[64];
                             snprintf(notify, sizeof(notify), "/partleft %s", sender->username);
-                            send(sender->partner, notify, strlen(notify), 0);
+                            send(partnerFd, notify, strlen(notify), 0);
                             
                             // Return partner to lobby too
-                            updateUserStatus(sender->partner, 0, 1);
-                            
-                            // Broadcast partner's return to lobby
+                            updateUserStatus(partnerFd, 0, 1);
+                        }
+                        
+                        // Update sender status
+                        updateUserStatus(sender_fd, 0, 1);
+                        
+                        // Broadcast both users return to lobby after both are updated
+                        if (partnerFd > 0) {
+                            struct user *partner = findUserByFd(partnerFd);
                             if (partner) {
                                 broadcastUserUpdate(partner, listener, pfds, fd_count);
                             }
                         }
-                        updateUserStatus(sender_fd, 0, 1);
-                        
-                        // Broadcast sender's return to lobby
                         broadcastUserUpdate(sender, listener, pfds, fd_count);
                         continue;
                     }

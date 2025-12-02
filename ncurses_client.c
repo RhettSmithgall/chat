@@ -23,7 +23,6 @@ typedef enum {
     VIEW_PRIVATE
 } ViewState;
 
-// User struct
 typedef struct User {
     char username[24];
     int fd;
@@ -82,10 +81,8 @@ int activeScroll = 0, onlineScroll = 0, privateScroll = 0;
 // Screen dimensions
 int maxY, maxX;
 
-//==============================================================================
-// NETWORKING FUNCTIONS
-//==============================================================================
 
+// NETWORKING FUNCTIONS
 void *getInAddr(struct sockaddr *sa) {
     if (sa->sa_family == AF_INET) {
         return &(((struct sockaddr_in*)sa)->sin_addr);
@@ -121,10 +118,7 @@ int connectToServer(const char *host, const char *port) {
     return sockfd;
 }
 
-//==============================================================================
 // USER LIST FUNCTIONS
-//==============================================================================
-
 User *createUser(const char *username, int fd, int partner, int status) {
     User *newNode = (User*)malloc(sizeof(User));
     strncpy(newNode->username, username, sizeof(newNode->username) - 1);
@@ -220,10 +214,7 @@ User *getUserByStatusIndex(User *head, int status, int index) {
     return NULL;
 }
 
-//==============================================================================
 // MESSAGE FUNCTIONS
-//==============================================================================
-
 void addLobbyMessage(const char *msg) {
     if (lobbyMsgCount >= MAX_MESSAGES) {
         free(lobbyMessages[0]);
@@ -246,10 +237,7 @@ void addPrivateMessage(const char *msg) {
     privateMessages[privateMsgCount++] = strdup(msg);
 }
 
-//==============================================================================
 // PROTOCOL PARSING
-//==============================================================================
-
 void parseUser(const char *buffer) {
     char username[24];
     int fd, partner, status;
@@ -319,10 +307,7 @@ void getUserlist(int fd) {
     }
 }
 
-//==============================================================================
 // LOBBY UI FUNCTIONS
-//==============================================================================
-
 void drawBoxWithTitle(WINDOW *win, const char *title, int isActive) {
     box(win, 0, 0);
     if (isActive) {
@@ -412,10 +397,7 @@ void renderLobby() {
     renderInputPanel();
 }
 
-//==============================================================================
 // PRIVATE CHAT UI FUNCTIONS
-//==============================================================================
-
 void renderPrivateChat() {
     // Partner panel (top)
     werase(partnerPanel.win);
@@ -424,7 +406,6 @@ void renderPrivateChat() {
     int displayHeight = partnerPanel.height - 2;
     int partnerMsgCount = 0;
     
-    // Count partner messages (messages not starting with "You:")
     for (int i = 0; i < privateMsgCount; i++) {
         if (strncmp(privateMessages[i], "You:", 4) != 0) {
             partnerMsgCount++;
@@ -439,7 +420,6 @@ void renderPrivateChat() {
     }
     wrefresh(partnerPanel.win);
 
-    // My panel (middle)
     werase(myPanel.win);
     drawBoxWithTitle(myPanel.win, "You", 0);
     
@@ -458,10 +438,7 @@ void renderPrivateChat() {
     wrefresh(privateInputPanel.win);
 }
 
-//==============================================================================
 // WINDOW INITIALIZATION
-//==============================================================================
-
 void initLobbyWindows() {
     int leftWidth = maxX / 4;
     int rightWidth = maxX - leftWidth;
@@ -552,10 +529,7 @@ void switchToPrivateView(const char *partner, int pFd) {
     addPrivateMessage("*** Type /leave to return to lobby ***");
 }
 
-void switchToLobbyView() {
-    // Tell server we're returning to lobby (status=1, partner=0)
-    send(serverFd, "/lobby", 6, 0);
-    
+void switchToLobbyViewLocal() {
     partnerFd = -1;
     memset(partnerName, 0, sizeof(partnerName));
     
@@ -564,15 +538,17 @@ void switchToLobbyView() {
     refresh();
     initLobbyWindows();
     currentView = VIEW_LOBBY;
-    activePanel = 3;  // Focus input
+    activePanel = 3;
     
     addLobbyMessage("*** Returned to lobby ***");
 }
 
-//==============================================================================
-// INPUT HANDLING
-//==============================================================================
+void switchToLobbyView() {
+    send(serverFd, "/lobby", 6, 0);
+    switchToLobbyViewLocal();
+}
 
+// INPUT HANDLING
 void handleLobbyEnter() {
     if (activePanel == 3) {
         // Send message to chat
@@ -757,10 +733,7 @@ void handleKeyInput(int ch) {
     }
 }
 
-//==============================================================================
 // MAIN
-//==============================================================================
-
 int main(int argc, char *argv[]) {
     // Prompt for username
     printf("=================================\n");
@@ -822,6 +795,9 @@ int main(int argc, char *argv[]) {
 
     getmaxyx(stdscr, maxY, maxX);
     
+    clear();
+    refresh();
+    
     initLobbyWindows();
     
     char welcome[64];
@@ -864,6 +840,11 @@ int main(int argc, char *argv[]) {
                 char *end = strchr(buffer, '}');
                 if (end) {
                     memmove(buffer, end + 1, strlen(end));
+                }
+                if (strlen(buffer) == 0 || buffer[0] == '{') {
+                    if (currentView == VIEW_LOBBY) renderLobby();
+                    else renderPrivateChat();
+                    continue;
                 }
             }
             
@@ -917,13 +898,12 @@ int main(int argc, char *argv[]) {
             }
             
             if (strncmp(buffer, "/partleft ", 10) == 0) {
-                // Partner left the private chat
                 char leaverName[24];
                 if (sscanf(buffer, "/partleft %23s", leaverName) == 1) {
                     addPrivateMessage("*** Partner left the chat ***");
                     renderPrivateChat();
                     sleep(1);
-                    switchToLobbyView();
+                    switchToLobbyViewLocal();
                     renderLobby();
                 }
                 continue;
@@ -951,7 +931,7 @@ int main(int argc, char *argv[]) {
         // Check for keyboard input
         int ch = getch();
         if (ch != ERR) {
-            if (ch == 27) {  // ESC
+            if (ch == 27) {  // ESC Key
                 running = 0;
             } else {
                 handleKeyInput(ch);
