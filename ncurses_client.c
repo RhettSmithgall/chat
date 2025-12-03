@@ -530,6 +530,20 @@ void switchToPrivateView(const char *partner, int pFd) {
 }
 
 void switchToLobbyViewLocal() {
+    User *me = findUserByFd(userlist, myFd);
+    if (me) {
+        me->status = 1;
+        me->partner = 0;
+    }
+    
+    if (partnerFd > 0) {
+        User *partner = findUserByFd(userlist, partnerFd);
+        if (partner) {
+            partner->status = 1;
+            partner->partner = 0;
+        }
+    }
+    
     partnerFd = -1;
     memset(partnerName, 0, sizeof(partnerName));
     
