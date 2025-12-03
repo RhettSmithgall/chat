@@ -1,6 +1,6 @@
 CC = gcc
 
-CFLAGS = -Wall
+CFLAGS += -Wall -Wno-format-truncation
 
 all: server client
 
